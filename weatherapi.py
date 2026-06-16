@@ -1,9 +1,21 @@
 import requests
 import mysql.connector
 import os
+import re
+import logging
 from dotenv import load_dotenv
 from datetime import datetime
 load_dotenv()
+logging.basicConfig(
+    filename="weather_app.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+def validate_city(city):
+    pattern= "^[A-Za-z ]+$"
+    if re.match(pattern, city):
+        return True
+    return False
 def connect_db():
     return mysql.connector.connect(
         host="localhost",
@@ -58,6 +70,7 @@ def save(data):
         cursor.execute(query, values)
         conn.commit()
         print("\n Weather saved Successfully")
+        logging.info(f"Weather data saved for {city}")
     except Exception as e:
         print("Database Error:",e)
 
@@ -65,7 +78,12 @@ def save(data):
         cursor.close()
         conn.close()
 def check_weather():
-    city=input("\nEnter city:")
+    city=input("\nEnter city:").strip()
+    if not validate_city(city):
+        print("\nInvalid city name!!")
+        logging.warning(f"Invalid city entered: {city}")
+        return
+    logging.info(f"valid city entered:{city}")
     data=get_weather(city)
     if data:
         print("----Weather Report-----")
@@ -75,6 +93,10 @@ def check_weather():
         print("Humidity:",data["current"]["humidity"])
         print("Wind Speed:",data["current"]["wind_kph"])
         print("Weather Condition:",data["current"]["condition"]["text"])
+        logging.info(
+            f"Weather checked for {data['location']['name']},"
+            f"Temperature: {data['current']['temp_c']}°C"
+        )
         save(data)
 def view_history():
     try:
@@ -174,6 +196,7 @@ def delete_history():
         cursor.execute(query)
         conn.commit()
         print("\nHistory deleted Successfully!!!")
+        logging.info("Weather history deleted")
     except Exception as e:
         print(e)
     finally:
@@ -196,6 +219,7 @@ def export_history():
                 line = f"{row[0]} | {row[1]}°C | {row[2]}\n"
                 file.write(line)
         print("\nExported to weather_history.txt")
+        logging.info("Weather history exported to weather_history.txt")
     except Exception as e:
         print(e)
     finally:
@@ -248,6 +272,7 @@ while True:
     elif choice == "2":
         view_history()
     elif choice == "3":
+        logging.info("Application closed by user")
         print("\nThank You!")
         break
     elif choice == "4":
