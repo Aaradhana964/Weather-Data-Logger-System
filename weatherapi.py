@@ -6,21 +6,95 @@ import logging
 from dotenv import load_dotenv
 from datetime import datetime
 load_dotenv()
+failed_validations=0
 logging.basicConfig(
     filename="weather_app.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 def validate_city(city):
-    pattern= "^[A-Za-z ]+$"
-    if re.match(pattern, city):
-        return True
-    return False
+    return bool(re.fullmatch(r"[A-Za-z .]+",city))
+def validate_country(country):
+    return bool(re.fullmatch(r"[A-Za-z ]+", country))
+def validate_temperature(temp):
+    return bool(re.fullmatch(r"-?\d+(\.\d+)?", str(temp)))
+def validate_humidity(humidity):
+    return bool(re.fullmatch(r"\d+", str(humidity)))
+def validate_wind_speed(speed):
+    return bool(re.fullmatch(r"\d+(\.\d+)?", str(speed)))
+def validate_condition(condition):
+    return bool(re.fullmatch(r"[A-Za-z ]+", condition))
+
+def validate_weather_data(
+        city,
+        country,
+        temperature,
+        humidity,
+        wind_speed,
+        condition):
+
+    city_valid = validate_city(city)
+    country_valid = validate_country(country)
+    temp_valid = validate_temperature(temperature)
+    humidity_valid = validate_humidity(humidity)
+    wind_valid = validate_wind_speed(wind_speed)
+    condition_valid = validate_condition(condition)
+
+    print("\n----- Validation Report -----")
+
+    print("City Validation        :", "Passed" if city_valid else "Failed")
+    print("Country Validation     :", "Passed" if country_valid else "Failed")
+    print("Temperature Validation :", "Passed" if temp_valid else "Failed")
+    print("Humidity Validation    :", "Passed" if humidity_valid else "Failed")
+    print("Wind Speed Validation  :", "Passed" if wind_valid else "Failed")
+    print("Condition Validation   :", "Passed" if condition_valid else "Failed")
+
+    return (
+        city_valid and
+        country_valid and
+        temp_valid and
+        humidity_valid and
+        wind_valid and
+        condition_valid
+    )
+def log_validation(city, status):
+
+    with open("validation_log.txt", "a") as file:
+
+        file.write(
+            f"{datetime.now().strftime('%d-%m-%Y %I:%M %p')}\n"
+        )
+
+        file.write(f"{city}\n")
+        file.write(f"{status}\n\n")
+
+def save_invalid_record(
+        city,
+        country,
+        temperature,
+        humidity,
+        wind_speed,
+        condition):
+
+    with open(
+        "invalid_weather_records.txt",
+        "a"
+    ) as file:
+
+        file.write(
+            f"{city}, "
+            f"{country}, "
+            f"{temperature}, "
+            f"{humidity}, "
+            f"{wind_speed}, "
+            f"{condition}\n"
+        )
+
 def connect_db():
     return mysql.connector.connect(
-        host="localhost",
+        host="host",
         user="root",
-        password="aaradhana_0910",
+        password="password",
         database="weather_db"
     )
 API_KEY=os.getenv("API_KEY")
@@ -54,9 +128,20 @@ def save(data):
         now=datetime.now()
         search_date=now.date()
         search_time=now.time()
-        query="""Insert into weather_reports(
-        city,country,temperature,humidity,wind_speed,weather_condition,search_date,search_time)values
-        (%s,%s,%s,%s,%s,%s,%s,%s)"""
+        query = """INSERT INTO weather_reports(
+        city,
+        country,
+        temperature,
+        humidity,
+        wind_speed,
+        weather_condition,
+        search_date,
+        search_time,
+        validation_status
+        )
+        VALUES
+        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
         values=(
             city,
             country,
@@ -65,7 +150,8 @@ def save(data):
             wind_speed,
             weather_condition,
             search_date,
-            search_time
+            search_time,
+            "PASSED"
         )
         cursor.execute(query, values)
         conn.commit()
@@ -78,26 +164,76 @@ def save(data):
         cursor.close()
         conn.close()
 def check_weather():
-    city=input("\nEnter city:").strip()
-    if not validate_city(city):
-        print("\nInvalid city name!!")
-        logging.warning(f"Invalid city entered: {city}")
+
+    global failed_validations
+
+    city_input = input("\nEnter city: ").strip()
+
+    if not validate_city(city_input):
+
+        print("\nInvalid City Name!")
+
+        failed_validations += 1
+
+        log_validation(city_input, "FAILED")
+
         return
-    logging.info(f"valid city entered:{city}")
-    data=get_weather(city)
-    if data:
-        print("----Weather Report-----")
-        print("City:",data["location"]["name"])
-        print("Country:",data["location"]["country"])
-        print("Temperature:",data["current"]["temp_c"])
-        print("Humidity:",data["current"]["humidity"])
-        print("Wind Speed:",data["current"]["wind_kph"])
-        print("Weather Condition:",data["current"]["condition"]["text"])
-        logging.info(
-            f"Weather checked for {data['location']['name']},"
-            f"Temperature: {data['current']['temp_c']}°C"
-        )
+
+    data = get_weather(city_input)
+
+    if not data:
+        return
+
+    city = data["location"]["name"]
+    country = data["location"]["country"]
+    temperature = data["current"]["temp_c"]
+    humidity = data["current"]["humidity"]
+    wind_speed = data["current"]["wind_kph"]
+    condition = data["current"]["condition"]["text"]
+
+    print("\n----- Weather Report -----")
+
+    print("City :", city)
+    print("Country :", country)
+    print("Temperature :", temperature)
+    print("Humidity :", humidity)
+    print("Wind Speed :", wind_speed)
+    print("Weather Condition :", condition)
+
+    valid = validate_weather_data(
+        city,
+        country,
+        temperature,
+        humidity,
+        wind_speed,
+        condition
+    )
+
+    if valid:
+
+        log_validation(city, "PASSED")
+
         save(data)
+
+        print("\nWeather Saved Successfully")
+
+    else:
+
+        failed_validations += 1
+
+        log_validation(city, "FAILED")
+
+        save_invalid_record(
+            city,
+            country,
+            temperature,
+            humidity,
+            wind_speed,
+            condition
+        )
+
+        print("\nValidation Failed")
+        print("Record Not Saved")
 def view_history():
     try:
         conn=connect_db()
@@ -123,7 +259,6 @@ def last_search():
         LIMIT 1
         """
         cursor.execute (query)
-        record=cursor.fetchone()
         record = cursor.fetchone()
         if record:
             print("\nLast Weather Search:\n")
@@ -266,6 +401,7 @@ while True:
     print("8. Delete Weather History")
     print("9. Export Weather History")
     print("10. Statistics")
+    print("11. Failed Validation Count")
     choice = input("\nEnter Choice: ")
     if choice == "1":
         check_weather()
@@ -289,6 +425,10 @@ while True:
         export_history()
     elif choice == "10":
         statistics()
+    elif choice == "11":
+        print(
+            f"\nTotal Failed Validations : {failed_validations}"
+        )
     else:
         print("\nInvalid Choice!!")
 
